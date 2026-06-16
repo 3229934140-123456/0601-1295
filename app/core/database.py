@@ -6,6 +6,15 @@ from typing import AsyncGenerator
 from .config import settings
 from .logging_config import logger
 
+from app.models.organization import Department, Employee, InvestigationOfficer
+from app.models.data_source import RawDataRecord, EmailRecord, InstantMessageRecord, DoorAccessRecord, FinanceRecord
+from app.models.investigation import ComplianceRule, ComplianceEvent, InvestigationTicket, EvidenceItem, EvidencePackage
+from app.models.compliance import (
+    ApprovalRecord, ComplianceProfile, ComplianceProfileHistory,
+    DisciplinaryActionRecord, EmployeeReport, EventTimeline,
+    SystemLog, DailyStatistics
+)
+
 
 engine = create_async_engine(
     settings.DATABASE_URL,
@@ -59,7 +68,6 @@ async def get_db_context():
 
 async def init_db():
     async with engine.begin() as conn:
-        from app.models import *
         await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables initialized successfully")
 

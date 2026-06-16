@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from uuid import UUID
 import math
 import os
@@ -13,8 +13,8 @@ from app.core.database import get_db
 from app.core import logger, settings
 from app.core.constants import (
     SeverityLevel, EventType, TicketStatus,
-    ViolationResult, InvestigationConclusion,
-    LogActionType
+    ViolationResult, DisciplinaryAction,
+    InvestigationConclusion, LogActionType
 )
 from app.models.investigation import (
     InvestigationTicket, ComplianceEvent,
@@ -138,13 +138,16 @@ async def export_tickets(
     )
     filename = os.path.basename(filepath)
 
-    async with get_db_context_wrap() as db:
-        pass
+    _, total = await service.query_tickets(
+        **request.query_params,
+        page=1,
+        page_size=1,
+    )
 
     return ExportResponse(
         file_path=filepath,
         filename=filename,
-        record_count=0,
+        record_count=total,
         format=request.export_format,
     )
 
@@ -434,10 +437,15 @@ async def export_operation_logs(
         query_params=query_params,
         requester_id=requester_id,
     )
+    _, total = await service.query_operation_logs(
+        **query_params,
+        page=1,
+        page_size=1,
+    )
     return ExportResponse(
         file_path=filepath,
         filename=os.path.basename(filepath),
-        record_count=0,
+        record_count=total,
         format="csv",
     )
 
@@ -585,8 +593,3 @@ async def get_system_constants():
             ],
         }
     )
-
-
-async def get_db_context_wrap():
-    from app.core.database import get_db_context
-    return get_db_context()

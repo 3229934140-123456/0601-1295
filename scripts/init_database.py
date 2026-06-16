@@ -142,7 +142,7 @@ async def seed_investigation_officers(
             continue
 
         emp_dept_code = None
-        for code, dept_id in officer_specs.keys():
+        for code in officer_specs.keys():
             from sqlalchemy import select as s
             result = await db.execute(s(Department).where(Department.code == code))
             dept = result.scalar_one_or_none()

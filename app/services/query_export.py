@@ -7,7 +7,7 @@ import os
 import csv
 import json
 from collections import defaultdict
-from sqlalchemy import select, and_, or_, func, desc, asc, between
+from sqlalchemy import select, and_, or_, func, desc, asc, between, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import logger, settings
 from app.core.constants import (
@@ -52,7 +52,7 @@ class QueryAndExportService:
         page_size: int = 50,
         sort_by: str = "created_at",
         sort_order: str = "desc",
-    ) -> Tuple[List[InvestigationTicket], int:
+    ) -> Tuple[List[InvestigationTicket], int]:
         async with get_db_context() as db:
             query = select(InvestigationTicket)
 
@@ -81,8 +81,7 @@ class QueryAndExportService:
                 conditions.append(InvestigationTicket.status == status)
 
             if date_from and date_to:
-                field = getattr(InvestigationTicket.created_at)
-                if date_field == "created_at" else getattr(InvestigationTicket.closed_at)
+                field = getattr(InvestigationTicket, "created_at") if date_field == "created_at" else getattr(InvestigationTicket, "closed_at")
                 conditions.append(field.between(date_from, date_to))
             elif date_from:
                 field = getattr(InvestigationTicket, date_field, InvestigationTicket.created_at)
@@ -132,7 +131,7 @@ class QueryAndExportService:
         has_ticket: Optional[bool] = None,
         page: int = 1,
         page_size: int = 50,
-    ) -> Tuple[List[ComplianceEvent], int:
+    ) -> Tuple[List[ComplianceEvent], int]:
         async with get_db_context() as db:
             query = select(ComplianceEvent)
             conditions = []
@@ -188,7 +187,7 @@ class QueryAndExportService:
         log_level: Optional[str] = None,
         page: int = 1,
         page_size: int = 100,
-    ) -> Tuple[List[SystemLog], int:
+    ) -> Tuple[List[SystemLog], int]:
         async with get_db_context() as db:
             query = select(SystemLog)
             conditions = []
@@ -238,7 +237,7 @@ class QueryAndExportService:
         has_violations: Optional[bool] = None,
         page: int = 1,
         page_size: int = 50,
-    ) -> Tuple[List[ComplianceProfile], int:
+    ) -> Tuple[List[ComplianceProfile], int]:
         async with get_db_context() as db:
             query = select(ComplianceProfile).join(
                 Employee, ComplianceProfile.employee_id == Employee.id
@@ -752,7 +751,7 @@ class QueryAndExportService:
                     Employee.name,
                     func.count(InvestigationTicket.id)
                 ).join(
-                    InvestigationTicket.assigned_officer_id == Employee.id
+                    Employee, InvestigationTicket.assigned_officer_id == Employee.id
                 ).where(
                     InvestigationTicket.status.in_([
                         TicketStatus.ASSIGNED.value,
