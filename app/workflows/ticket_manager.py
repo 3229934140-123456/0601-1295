@@ -403,8 +403,12 @@ class OfficerAssignmentService:
         ticket.status = TicketStatus.ASSIGNED.value
         ticket.assigned_at = datetime.utcnow()
 
-        if officer.employee:
-            ticket.assigned_officer_name = officer.employee.name
+        emp_result = await db.execute(
+            select(Employee).where(Employee.id == officer.employee_id)
+        )
+        employee = emp_result.scalar_one_or_none()
+        if employee:
+            ticket.assigned_officer_name = employee.name
 
         officer.current_ticket_count = (officer.current_ticket_count or 0) + 1
 
@@ -416,7 +420,7 @@ class OfficerAssignmentService:
             target_id=ticket.id,
             target_name=ticket.ticket_number,
             user_id=officer.employee_id,
-            user_name=officer.employee.name if officer.employee else None,
+            user_name=employee.name if employee else None,
             action_details={
                 "officer_id": str(officer.employee_id),
                 "officer_specializations": officer.specializations,

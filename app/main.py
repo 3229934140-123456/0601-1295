@@ -9,7 +9,16 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from prometheus_client import make_asgi_app, Counter, Histogram, Gauge
+
+try:
+    from prometheus_client import make_asgi_app, Counter, Histogram, Gauge
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    make_asgi_app = None
+    Counter = None
+    Histogram = None
+    Gauge = None
+    PROMETHEUS_AVAILABLE = False
 
 from app.core import (
     settings,
@@ -23,20 +32,25 @@ from app.core.constants import SeverityLevel
 from app.api.routes import router as api_router
 from app.schemas import APIResponse
 
-HTTP_REQUEST_COUNT = Counter(
-    "http_requests_total",
-    "Total HTTP requests",
-    ["method", "endpoint", "status_code"]
-)
-HTTP_REQUEST_DURATION = Histogram(
-    "http_request_duration_seconds",
-    "HTTP request duration in seconds",
-    ["method", "endpoint"]
-)
-ACTIVE_TICKETS = Gauge(
-    "active_investigation_tickets",
-    "Number of active investigation tickets"
-)
+if PROMETHEUS_AVAILABLE:
+    HTTP_REQUEST_COUNT = Counter(
+        "http_requests_total",
+        "Total HTTP requests",
+        ["method", "endpoint", "status_code"]
+    )
+    HTTP_REQUEST_DURATION = Histogram(
+        "http_request_duration_seconds",
+        "HTTP request duration in seconds",
+        ["method", "endpoint"]
+    )
+    ACTIVE_TICKETS = Gauge(
+        "active_investigation_tickets",
+        "Number of active investigation tickets"
+    )
+else:
+    HTTP_REQUEST_COUNT = None
+    HTTP_REQUEST_DURATION = None
+    ACTIVE_TICKETS = None
 
 
 @asynccontextmanager
@@ -47,42 +61,56 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         env=settings.ENV
     )
 
-    await init_db()
+    try:
+        await init_db()
+        db_available = True
+    except Exception as e:
+        logger.warning("Database initialization failed, running in degraded mode", error=str(e))
+        db_available = False
+
     try:
         redis = await get_redis()
         await redis.set("system_startup_time", datetime.utcnow().isoformat())
     except Exception as e:
         logger.warning("Redis initialization skipped", error=str(e))
 
-    try:
-        from app.core.database import get_db_context
-        from app.models.investigation import InvestigationTicket, ComplianceEvent
-        from sqlalchemy import select, func
+    if db_available:
+        try:
+            from app.core.database import get_db_context
+            from app.models.investigation import InvestigationTicket, ComplianceEvent
+            from sqlalchemy import select, func
 
-        async with get_db_context() as db:
-            active_result = await db.execute(
-                select(func.count()).select_from(InvestigationTicket).where(
-                    InvestigationTicket.status != "closed"
+            async with get_db_context() as db:
+                active_result = await db.execute(
+                    select(func.count()).select_from(InvestigationTicket).where(
+                        InvestigationTicket.status != "closed"
+                    )
                 )
-            )
-            ACTIVE_TICKETS.set(active_result.scalar() or 0)
+                if PROMETHEUS_AVAILABLE and ACTIVE_TICKETS:
+                    ACTIVE_TICKETS.set(active_result.scalar() or 0)
 
-            from app.detection_engine.rules import build_default_rules
-            rules_count = len(build_default_rules())
-            logger.info(
-                "Startup checks complete",
-                database="initialized",
-                default_rules=rules_count,
-            )
-    except Exception as e:
-        logger.warning("Startup data check failed", error=str(e))
+                from app.detection_engine.rules import build_default_rules
+                rules_count = len(build_default_rules())
+                logger.info(
+                    "Startup checks complete",
+                    database="initialized",
+                    default_rules=rules_count,
+                )
+        except Exception as e:
+            logger.warning("Startup data check failed", error=str(e))
 
     logger.info("Application started successfully")
     yield
 
     logger.info("Shutting down application...")
-    await close_db()
-    await close_redis()
+    try:
+        await close_db()
+    except Exception:
+        pass
+    try:
+        await close_redis()
+    except Exception:
+        pass
     logger.info("Application shutdown complete")
 
 
@@ -105,8 +133,9 @@ app.add_middleware(
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-metrics_app = make_asgi_app()
-app.mount("/metrics", metrics_app)
+if PROMETHEUS_AVAILABLE and make_asgi_app:
+    metrics_app = make_asgi_app()
+    app.mount("/metrics", metrics_app)
 
 
 @app.middleware("http")
@@ -121,16 +150,17 @@ async def metrics_middleware(request: Request, call_next):
         status_code = 500
         raise e
     finally:
-        duration = (datetime.utcnow() - start_time).total_seconds()
-        HTTP_REQUEST_COUNT.labels(
-            method=request.method,
-            endpoint=endpoint,
-            status_code=status_code
-        ).inc()
-        HTTP_REQUEST_DURATION.labels(
-            method=request.method,
-            endpoint=endpoint
-        ).observe(duration)
+        if PROMETHEUS_AVAILABLE and HTTP_REQUEST_COUNT and HTTP_REQUEST_DURATION:
+            duration = (datetime.utcnow() - start_time).total_seconds()
+            HTTP_REQUEST_COUNT.labels(
+                method=request.method,
+                endpoint=endpoint,
+                status_code=status_code
+            ).inc()
+            HTTP_REQUEST_DURATION.labels(
+                method=request.method,
+                endpoint=endpoint
+            ).observe(duration)
 
     return response
 

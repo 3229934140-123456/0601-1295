@@ -10,7 +10,12 @@ from .database import (
     close_db,
 )
 from .redis_client import get_redis, close_redis, get_redis_context
-from .celery_app import celery_app
+
+try:
+    from .celery_app import celery_app
+except ImportError:
+    celery_app = None
+
 from .constants import *
 
 __all__ = [

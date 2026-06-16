@@ -52,14 +52,25 @@ from app.workflows import (
     InvestigationWorkflowService,
     EvidenceCollectionService,
 )
-from app.tasks import (
-    collect_all_sources,
-    run_violation_detection,
-    classify_and_create_tickets,
-    process_escalations,
-    generate_daily_report,
-    run_full_pipeline,
-)
+
+try:
+    from app.tasks import (
+        collect_all_sources,
+        run_violation_detection,
+        classify_and_create_tickets,
+        process_escalations,
+        generate_daily_report,
+        run_full_pipeline,
+    )
+    CELERY_AVAILABLE = True
+except ImportError:
+    collect_all_sources = None
+    run_violation_detection = None
+    classify_and_create_tickets = None
+    process_escalations = None
+    generate_daily_report = None
+    run_full_pipeline = None
+    CELERY_AVAILABLE = False
 
 router = APIRouter(prefix="/api/v1", tags=["core"])
 

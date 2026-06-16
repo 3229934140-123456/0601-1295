@@ -20,6 +20,7 @@ from app.models.investigation import (
 from app.models.data_source import (
     EmailRecord, InstantMessageRecord, DoorAccessRecord, FinanceRecord
 )
+from app.models.organization import Employee
 from app.models.compliance import EventTimeline, SystemLog
 
 
